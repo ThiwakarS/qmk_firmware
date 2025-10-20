@@ -65,5 +65,6 @@ int8_t sendchar(uint8_t c);
 #if defined(VIRTSER_ENABLE)
 
 bool virtser_usb_request_cb(USBDriver *usbp);
+void virtser_send_string(const char* str);
 
 #endif

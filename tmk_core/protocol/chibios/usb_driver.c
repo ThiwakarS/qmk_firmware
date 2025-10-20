@@ -250,6 +250,43 @@ void usb_endpoint_out_rx_complete_cb(USBDriver *usbp, usbep_t ep) {
     osalSysUnlockFromISR();
 }
 
+bool usb_endpoint_in_send_string(usb_endpoint_in_t *endpoint, const char *data, sysinterval_t timeout, bool buffered) {
+    size_t size = strlen(data);  // Calculate string length
+    osalDbgCheck((endpoint != NULL) && (data != NULL) && (size > 0U) && (size <= endpoint->config.buffer_size));
+
+    osalSysLock();
+    if (usbGetDriverStateI(endpoint->config.usbp) != USB_ACTIVE) {
+        osalSysUnlock();
+        return false;
+    }
+
+    if (endpoint->timed_out && timeout != TIME_INFINITE) {
+        timeout = TIME_IMMEDIATE;
+    }
+    osalSysUnlock();
+
+    while (true) {
+        size_t sent = obqWriteTimeout(&endpoint->obqueue, (const uint8_t*)data, size, timeout);
+
+        if (sent < size) {
+            osalSysLock();
+            endpoint->timed_out |= sent == 0;
+            bqSuspendI(&endpoint->obqueue);
+            obqResetI(&endpoint->obqueue);
+            bqResumeX(&endpoint->obqueue);
+            osalOsRescheduleS();
+            osalSysUnlock();
+            continue;
+        }
+
+        if (!buffered) {
+            obqFlush(&endpoint->obqueue);
+        }
+
+        return true;
+    }
+}
+
 bool usb_endpoint_in_send(usb_endpoint_in_t *endpoint, const uint8_t *data, size_t size, sysinterval_t timeout, bool buffered) {
     osalDbgCheck((endpoint != NULL) && (data != NULL) && (size > 0U) && (size <= endpoint->config.buffer_size));
 
